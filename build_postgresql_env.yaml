@@ -1,0 +1,85 @@
+id: build_postgresql_env
+namespace: animeratingdashboard
+
+inputs:
+  - id: base
+    type: SELECT
+    displayName: Select base to load
+    values: [v1, v2, v3]
+    defaults: v1
+
+variables:
+  file: "top_anime_dataset_{{inputs.base}}.csv"
+  data: "{{outputs.get_file.outputFiles['top_anime_dataset_' ~ inputs.base ~ '.csv']}}"
+
+#https://raw.githubusercontent.com/Cbas12/AnimeRatingDashboard/refs/heads/main/top_anime_dataset_v1.csv
+
+tasks:
+  - id: set_label
+    type: io.kestra.plugin.core.execution.Labels
+    labels:
+      file: "{{render(vars.file)}}"
+      base: "{{inputs.base}}"
+
+  - id: get_file
+    type: io.kestra.plugin.scripts.shell.Commands
+    outputFiles:
+      - "*.csv"
+    taskRunner:
+      type: io.kestra.plugin.core.runner.Process
+    commands:
+      - wget -qO- https://raw.githubusercontent.com/Cbas12/AnimeRatingDashboard/refs/heads/main/{{render(vars.file)}} > {{render(vars.file)}}
+
+  - id: create_table
+    type: "io.kestra.plugin.jdbc.postgresql.Queries"
+    sql:
+      CREATE TABLE IF NOT EXISTS mal_data (
+        anime_id TEXT,
+        anime_url TEXT,
+        image_url TEXT,
+        name TEXT,
+        english_name TEXT,
+        japanese_names TEXT,
+        score NUMERIC(3, 2),
+        genres TEXT,
+        themes TEXT,
+        demographics TEXT,
+        synopsis TEXT,
+        type TEXT,
+        episodes TEXT,
+        premiered TEXT,
+        producers TEXT,
+        studios TEXT,
+        source TEXT,
+        duration TEXT,
+        rating TEXT,
+        rank INTEGER,
+        popularity INTEGER,
+        favorites INTEGER,
+        scored_by INTEGER,
+        members INTEGER
+      );
+
+  - id: truncate
+    type: "io.kestra.plugin.jdbc.postgresql.Queries"
+    sql:
+      TRUNCATE TABLE mal_data;
+
+  - id: copy_to_postgre
+    type: io.kestra.plugin.jdbc.postgresql.CopyIn
+    format: CSV
+    from: "{{render(vars.data)}}"
+    table: mal_data
+    header: true
+    columns: [anime_id,anime_url,image_url,name,english_name,japanese_names,score,genres,themes,demographics,synopsis,type,episodes,premiered,producers,studios,source,duration,rating,rank,popularity,favorites,scored_by,members]
+
+  - id: purge_files
+    type: io.kestra.plugin.core.storage.PurgeCurrentExecutionFiles
+    description: This will remove output files. If you'd like to explore Kestra outputs, disable it.
+
+pluginDefaults:
+  - type: io.kestra.plugin.jdbc.postgresql
+    values:
+      url: jdbc:postgresql://host.docker.internal:5432/postgres-zoomcamp
+      username: kestra
+      password: k3str4
